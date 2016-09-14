@@ -1,5 +1,6 @@
 import socket
 import select
+import sqlite3
 
 
 def run_server():
@@ -25,11 +26,19 @@ def run_server():
     socket_list = []
     # Add the server socket to this list
     socket_list.append(server_socket)
+
     # I added this dictionary here, to allow the /NICK command to work:
     dictionary = dict() # socket -> name 
     socket_to_name = dict() # name -> socket
 
     usernames = []
+    
+    # Data Base code:
+    connection = sqlite3.connect('DataBase.db')
+    cursor = connection.cursor()
+    cursor.execute('''CREATE TABLE if not exists SocketDB  (roomName,Sockets)''')
+
+    default_chat_room = 'global'
 
 
     # Start listening for input from both the server socket and the clients
@@ -48,6 +57,12 @@ def run_server():
                 socket_list.append(sockfd)
                 # Log what has happened on the server
                 print ("Client (%s, %s) connected" % (addr[0],addr[1]))
+
+                # My Code:
+                # if a client is connected to the server, conect them to the default chat room:
+                #cursor.execute('INSERT INTO SocketDB (roomName, Sockets) values (\'%s\', \'%s\')' % (default_chat_room,addr[1]))
+                
+                
 
             # A message from a client has been recieved
             else:
@@ -94,13 +109,34 @@ def run_server():
                     	sock.send("Error: the user doesn't exist!")
                     else:	
                         receiver_socket.send(dictionary.get(sock) + " : " + to_send.encode())
-                                         
+                
+                if ('/JOIN' in message):   
+                    command = message.split(" ")[0]
+                    room_name = message.split(" ")[1]
+
+                    #unique_id = sock.getpeername()[1]
+                    cursor.execute('INSERT INTO SocketDB (roomName, Sockets) values (\'%s\', \'%s\')' % (room_name,sock))
+
+
+
 
                 for current_soc in socket_list:
                     # send no message after a client sets their user name.
                     # or if they have used any of the special commands:
-                    if ('/NICK' in message or '/WHO' in message or '/MSG' in message):
+                    if ('/NICK' in message or '/WHO' in message or '/MSG' in message or '/JOIN' in message):
                         break 
+
+                    room = "test"
+                    for row in connection.execute('SELECT roomName,Sockets from SocketDB'):
+                        if (row[1] == sock.getpeername()[1]):
+                            room = row[0]
+
+                    for row in connection.execute('SELECT roomName,Sockets from SocketDB'):
+                        if (row[0] == room):
+                            row[1].send(message.encode())
+                    break        
+     
+                        
                     # the extra condition on the end is to ensure that the client 
                     # that just sent the message doesn't get the message again!
                     if (current_soc is not server_socket and current_soc is not sock):
